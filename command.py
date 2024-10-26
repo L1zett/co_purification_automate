@@ -97,7 +97,7 @@ class CoPurificationAutomate(ImageProcPythonCommand):
         self.open_party_menu()
         self.party_list = self.detect_shadow_in_party()
         self.close_party_menu()
-        if option[1] == option_list[1]:
+        if option[0] == option_list[1]:
             self.access_storage_system()
             self.detect_box_state()
             self.swap_party_and_box_pokemon(Status.Shadow)
@@ -107,10 +107,10 @@ class CoPurificationAutomate(ImageProcPythonCommand):
             print("ダークポケモンが存在しないためマクロを終了します")
             self.finish()
         self.exit_laboratory()
-        if option[1] == option_list[1]:
-            self.all_purification()
-        else:
+        if option[0] == option_list[0]:
             self.party_only_purification()
+        else:
+            self.all_purification()
         print("リライブ作業が完了しました")
         
     def all_purification(self):
