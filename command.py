@@ -353,8 +353,8 @@ class CoPurificationAutomate(ImageProcPythonCommand):
         self.press(Direction.UP_RIGHT, duration=2.25, wait=0.02)
         self.press(Direction.UP, duration=1, wait=0.02)
         self.press(Direction.UP_RIGHT, duration=1.8, wait=0.02)
-        self.hold(Direction.UP)
-        if self.wait_load(5):
+        self.hold(Direction.UP, wait=1)
+        if self.wait_load(5, threshold=0.95):
             self.holdEnd(Direction.UP)
             self.wait_until_load_finishes()
             self.press(Direction.UP, duration=2.2, wait=0.02)
@@ -378,7 +378,7 @@ class CoPurificationAutomate(ImageProcPythonCommand):
         self.press(Direction.DOWN_LEFT, duration=2.5, wait=0.02)
         self.hold(Direction.DOWN)
         # 洞窟から出る
-        if self.wait_load(5):
+        if self.wait_load(5, threshold=0.95):
             self.holdEnd(Direction.DOWN)
             self.wait_until_load_finishes()
     
@@ -422,7 +422,8 @@ class CoPurificationAutomate(ImageProcPythonCommand):
             if ratio > 0.5:
                 break
             self.press(Button.A, wait=0.5)
-            
+        
+        self.wait(0.7)
         self.pressRep(Hat.BTM, party_index)
         self.press(Button.A)
         if not self.wait_load(10):
@@ -696,7 +697,7 @@ class CoPurificationAutomate(ImageProcPythonCommand):
         
         return self.all_count_status(status) > 0
             
-    def wait_load(self, timeout):
+    def wait_load(self, timeout, threshold=0.9):
         """
         暗転するまで待つ
         """
@@ -705,7 +706,9 @@ class CoPurificationAutomate(ImageProcPythonCommand):
         lower = np.array([0, 0, 0])
         upper = np.array([180, 255, 50])
         while True:
-            if image_process.calc_color_ratio(self.camera.readFrame(), lower, upper) > 0.9:
+            ratio = image_process.calc_color_ratio(self.camera.readFrame(), lower, upper) 
+            self._logger.debug(ratio)
+            if ratio > threshold:
                 return True
             elapsed_time = perf_counter() - start
             if elapsed_time > timeout:
