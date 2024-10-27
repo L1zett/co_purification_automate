@@ -4,10 +4,12 @@ from time import perf_counter, sleep
 from collections import deque
 from enum import Enum, auto
 from typing import List, Optional
+from datetime import timedelta
 import numpy as np
 import os
 import cv2
 import tempfile
+import time
 
 from . import image_process
 
@@ -88,6 +90,7 @@ class CoPurificationAutomate(ImageProcPythonCommand):
         self.box_count = 3
         self.cur_box_num = 1
         self.partner = None
+        self.start_time = time.time()
         
     def do(self):
         option_list = ["手持ちポケモンだけリライブ", "ボックスのポケモンもまとめてリライブ"]
@@ -102,7 +105,7 @@ class CoPurificationAutomate(ImageProcPythonCommand):
             self.detect_box_state()
             self.swap_party_and_box_pokemon(Status.Shadow)
             self.close_storage_system()
-            print(f"Remaining Shadow Pokemon: {self.all_count_status(Status.Shadow)}")
+            print(f"残りのダークポケモン: {self.all_count_status(Status.Shadow)}匹")
         if not self.contains_status(Status.Shadow):
             print("ダークポケモンが存在しないためマクロを終了します")
             self.finish()
@@ -111,7 +114,9 @@ class CoPurificationAutomate(ImageProcPythonCommand):
             self.party_only_purification()
         else:
             self.all_purification()
-        print("リライブ作業が完了しました")
+        txt = "リライブ作業が完了しました"
+        print(txt)
+        self.LINE_text(txt)
         
     def all_purification(self):
         """ボックスと手持ちのダークポケモンをリライブ"""
@@ -128,7 +133,7 @@ class CoPurificationAutomate(ImageProcPythonCommand):
                 for party_idx, status in enumerate(self.party_list):
                     if status == Status.Recovering:
                         self.exec_purification(party_idx)
-                        print(f"Remaining Shadow Pokemon: {self.all_count_status(Status.Shadow)}")
+                print(f"残りのダークポケモン: {self.all_count_status(Status.Shadow)}匹")
                 if not self.contains_status(Status.Shadow):
                     break
                 self.exit_relic_forest()
@@ -189,11 +194,10 @@ class CoPurificationAutomate(ImageProcPythonCommand):
             box_num = self.find_status_in_box(target_status)
             if box_num is None:
                 break
-            self.switching_jump_box(box_num)
-            if status == target_status:
-                continue
-            cur_cell, grab_pokemon = self.swap_pokemon(box_num, cur_cell, i, grab_pokemon, target_status)
-            self.party_list[i] = target_status
+            if status != target_status:
+                self.switching_jump_box(box_num)
+                cur_cell, grab_pokemon = self.swap_pokemon(box_num, cur_cell, i, grab_pokemon, target_status)
+                self.party_list[i] = target_status
         
         # 手持ちが6匹未満の場合
         for _ in range(6 - len(self.party_list)):
@@ -291,10 +295,10 @@ class CoPurificationAutomate(ImageProcPythonCommand):
         self.press(Direction.UP, duration=1.7, wait=wait_time)
         self.press(Direction.LEFT, duration=1.2, wait=wait_time)
         self.hold(Direction.DOWN, 2)
-        if self.wait_load(5):
+        if self.wait_load(10):
             self.holdEnd(Direction.DOWN)
             self.wait_until_load_finishes()
-            self.press(Direction.DOWN_RIGHT, wait=0.4)
+            self.press(Direction.DOWN_RIGHT, wait=0.7)
             self.press(Button.A)
         else:
             self.stop_macro("Failed to goto laboratory.")
@@ -307,7 +311,7 @@ class CoPurificationAutomate(ImageProcPythonCommand):
         if self.wait_load(10):
             self.holdEnd(Direction.DOWN)
             self.wait_until_load_finishes()
-            self.press(Direction.UP_LEFT, wait=0.4)
+            self.press(Direction.UP_LEFT, wait=0.7)
             self.press(Button.A)
         else:
             self.stop_macro("Failed to goto agate village.")
@@ -754,6 +758,7 @@ class CoPurificationAutomate(ImageProcPythonCommand):
         self.finish()
     
     def end(self, ser):
+        print(f"-- Execution time: {timedelta(seconds=time.time() - self.start_time)} -- ")
         if self.partner is not None:
             os.remove(self.partner)
         super().end(ser)
