@@ -27,14 +27,3 @@ def calc_color_ratio(img, lower_bound, upper_bound) -> float:
 def crop_image(img, x, y, width, height):
     cropped_img = img[y : y + height, x : x + width]
     return cropped_img
-
-def is_contain_template(src: np.ndarray, template: np.ndarray, threshold=0.7, use_gray=True, x=None, y=None, width=None, height=None):
-    if use_gray:
-        src = cv2.cvtColor(src, cv2.COLOR_BGR2GRAY) if len(src.shape) == 3 else src
-        template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY) if len(template.shape) == 3 else template
-    if all(v is not None for v in [x, y, width, height]):
-        src = src[y : y + height, x : x + width]
-    res = cv2.matchTemplate(src, template, cv2.TM_CCOEFF_NORMED)
-    _, max_val, _, _ = cv2.minMaxLoc(res)
-    print(max_val)
-    return max_val > threshold

@@ -3,7 +3,6 @@ from Commands.PythonCommandBase import ImageProcPythonCommand
 from time import perf_counter, sleep
 from collections import deque
 from enum import Enum, auto
-from typing import List, Optional
 from datetime import timedelta
 import numpy as np
 import os
@@ -90,10 +89,11 @@ class CoPurificationAutomate(ImageProcPythonCommand):
         self.box_count = 3
         self.cur_box_num = 1
         self.partner = None
+        self.is_extension = hasattr(self, "print_t1") and callable(getattr(self, "print_t1"))
         self.start_time = time.time()
         
     def do(self):
-        option_list = ["手持ちポケモンだけリライブ", "ボックスのポケモンもまとめてリライブ"]
+        option_list = ["手持ちポケモンのみリライブ", "ボックスのポケモンもまとめてリライブ"]
         option = self.dialogue6widget("Option",[["Radio", "選択", option_list, option_list[0]]])
         if not option:
             return
@@ -105,7 +105,7 @@ class CoPurificationAutomate(ImageProcPythonCommand):
             self.detect_box_state()
             self.swap_party_and_box_pokemon(Status.Shadow)
             self.close_storage_system()
-            print(f"残りのダークポケモン: {self.all_count_status(Status.Shadow)}匹")
+            self.overwrite_ext_log(f"残りのダークポケモン: {self.total_count_status(Status.Shadow)}匹")
         if not self.contains_status(Status.Shadow):
             print("ダークポケモンが存在しないためマクロを終了します")
             self.finish()
@@ -133,7 +133,7 @@ class CoPurificationAutomate(ImageProcPythonCommand):
                 for party_idx, status in enumerate(self.party_list):
                     if status == Status.Recovering:
                         self.exec_purification(party_idx)
-                print(f"残りのダークポケモン: {self.all_count_status(Status.Shadow)}匹")
+                        self.overwrite_ext_log(f"残りのダークポケモン: {self.total_count_status(Status.Shadow, Status.Recovering)}匹")
                 if not self.contains_status(Status.Shadow):
                     break
                 self.exit_relic_forest()
@@ -168,6 +168,7 @@ class CoPurificationAutomate(ImageProcPythonCommand):
         ボックスの状態を検出する
         ボックス名にカーソルを合わせておく
         """
+        
         # ボックスが全てのポケモンを読み込むまで少し待つ
         # ?マークが表示されていると上手く検出できない
         loading_message(2.5, "ボックス内のポケモンを検出中")
@@ -187,6 +188,7 @@ class CoPurificationAutomate(ImageProcPythonCommand):
         手持ちのポケモンをボックスのポケモンと入れ替える
         ボックス名にカーソルを合わせておくこと
         """
+        
         self.press(Hat.BTM)
         cur_cell = (0, 3)
         grab_pokemon = None
@@ -222,6 +224,7 @@ class CoPurificationAutomate(ImageProcPythonCommand):
         """
         ボックス内のダークポケモンと手持ちのポケモンを入れ替える
         """
+        
         directions, cell = self.search_nearest_status(self.box_list[box_num - 1], cur_cell[0], cur_cell[1], target_status)
         if cell == (-1, -1):
             return cur_cell, grab_pokemon
@@ -243,6 +246,7 @@ class CoPurificationAutomate(ImageProcPythonCommand):
         研究所の外に出る
         PCの前に立っているのが前提
         """
+        
         self.press(Direction.RIGHT, duration=1.3, wait=0.02)
         self.hold(Direction.DOWN)
         if self.wait_load(5):
@@ -256,6 +260,7 @@ class CoPurificationAutomate(ImageProcPythonCommand):
         """
         研究所に入ってPCの前に立つまで
         """
+        
         self.hold(Direction.UP, wait=2)
         if self.wait_load(10):
             self.holdEnd(Direction.UP)
@@ -271,6 +276,7 @@ class CoPurificationAutomate(ImageProcPythonCommand):
         研究所の周りをぐるぐる走り回る
         考案: 奈都さん(@Natu5307051)
         """
+        
         self.press(Direction.RIGHT, duration=4, wait=0.02)
         for i in range(loop_count):
             self.press(Direction.UP, duration=6.6, wait=0.02)
@@ -417,6 +423,7 @@ class CoPurificationAutomate(ImageProcPythonCommand):
                 cv2.imwrite(self.partner, frame)
         
         prev_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        start = perf_counter() 
         while True:
             next_img = cv2.cvtColor(self.camera.readFrame(), cv2.COLOR_BGR2GRAY)
             diff = cv2.absdiff(prev_img, next_img)
@@ -425,13 +432,23 @@ class CoPurificationAutomate(ImageProcPythonCommand):
             self._logger.debug(ratio)
             if ratio > 0.5:
                 break
+            if perf_counter() - start > 5:
+                self.pressRep(Button.B, 5)
+                self.party_list[party_index] = Status.Shadow
+                return
             self.press(Button.A, wait=0.5)
         
         self.wait(0.7)
         self.pressRep(Hat.BTM, party_index)
         self.press(Button.A)
-        if not self.wait_load(10):
-            self.stop_macro("Failed transition to purification scene.")
+        if not self.wait_load(5):
+            while not self.isContainTemplate(self.partner, 0.9):
+                self.press(Button.B)
+            self.party_list[party_index] = Status.Shadow
+            self.wait(1)
+            self._logger.debug("Failed Purification")
+            return
+        
         self.wait_until_load_finishes()
         self.wait(8)
         lower = np.array([0, 0, 0])
@@ -452,7 +469,7 @@ class CoPurificationAutomate(ImageProcPythonCommand):
             self.press(Button.B)
         self.wait_until_load_finishes()
         
-        while not self.isContainTemplate(self.partner, 0.8):
+        while not self.isContainTemplate(self.partner, 0.9):
             self.press(Button.B)
         self.party_list[party_index] = Status.Normal
         self.wait(0.3)
@@ -571,13 +588,13 @@ class CoPurificationAutomate(ImageProcPythonCommand):
     def detect_shadow_in_party(self, threshold=0.3):
         """
         手持ちにダークポケモンが居るか調べる
-        
         """
-        loading_message(1.0, "手持ちのポケモンを検出中")
+        
+        loading_message(1.5, "手持ちのポケモンを検出中")
         img = self.camera.readFrame()
         party_list = []
         party_count = self.detect_party_pokemon_count()
-        lower = np.array([35, 40, 40])
+        lower = np.array([35, 20, 20])
         upper = np.array([85, 255, 255])
 
         for i in range(party_count):
@@ -593,7 +610,7 @@ class CoPurificationAutomate(ImageProcPythonCommand):
         print(result)
         return party_list
         
-    def detect_shadow_in_box(self, threshold=0.03) ->  List[List[Optional[Status]]]:
+    def detect_shadow_in_box(self, threshold=0.03):
         img1 = image_process.crop_image(self.camera.readFrame(), *self.box_crop_area)
         self.wait(0.25)
         img2 = image_process.crop_image(self.camera.readFrame(), *self.box_crop_area)
@@ -678,28 +695,24 @@ class CoPurificationAutomate(ImageProcPythonCommand):
                     return i
         return None
     
-    def count_status_in_party(self, status):
+    def count_status_in_party(self, *statuses):
         count = 0
         if self.box_list:
             for box in self.box_list:
                 for row in box:
-                    count += sum(1 for pokemon in row if pokemon == status)
+                    count += sum(1 for pokemon in row if pokemon in statuses)
         return count
     
-    def count_status_in_box(self, status):
+    def count_status_in_box(self, *statuses):
         if self.party_list:
-            return sum(1 for pokemon in self.party_list if pokemon == status)
+            return sum(1 for pokemon in self.party_list if pokemon in statuses)
         return 0
 
-    def all_count_status(self, status):
-        """指定した状態を持つポケモンが何匹居るか調べる"""
-        
-        return self.count_status_in_party(status) + self.count_status_in_box(status)
+    def total_count_status(self, *statuses):
+        return self.count_status_in_party(*statuses) + self.count_status_in_box(*statuses)
 
-    def contains_status(self, status):
-        """指定した状態を持つポケモンが存在するか調べる"""
-        
-        return self.all_count_status(status) > 0
+    def contains_status(self, *statuses):
+        return self.total_count_status(*statuses) > 0
             
     def wait_load(self, timeout, threshold=0.9):
         """
@@ -711,7 +724,6 @@ class CoPurificationAutomate(ImageProcPythonCommand):
         upper = np.array([180, 255, 50])
         while True:
             ratio = image_process.calc_color_ratio(self.camera.readFrame(), lower, upper) 
-            self._logger.debug(ratio)
             if ratio > threshold:
                 return True
             elapsed_time = perf_counter() - start
@@ -756,6 +768,18 @@ class CoPurificationAutomate(ImageProcPythonCommand):
         self._logger.debug(error_message)
         print(f"問題が発生したためマクロを停止しました: {error_message}")
         self.finish()
+    
+    def write_ext_log(self, text):
+        if self.is_extension:
+            self.print_t(text)
+        else:
+            print(text)
+    
+    def overwrite_ext_log(self, text):
+        if self.is_extension:
+            self.print_tb("w", text)
+        else:
+            print(text)
     
     def end(self, ser):
         print(f"-- Execution time: {timedelta(seconds=time.time() - self.start_time)} -- ")
